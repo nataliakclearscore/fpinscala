@@ -28,6 +28,7 @@ sealed trait Option[+A] {
   def orElse[B>:A](ob: => Option[B]): Option[B] =
     this map (Some(_)) getOrElse ob
 
+
   /*
   Again, we can implement this with explicit pattern matching.
   */
