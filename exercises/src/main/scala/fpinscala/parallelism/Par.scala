@@ -1,7 +1,9 @@
 package fpinscala.parallelism
 
 import java.util.concurrent._
+
 import language.implicitConversions
+import scala.Some
 
 object Par {
   type Par[A] = ExecutorService => Future[A]
@@ -45,6 +47,31 @@ object Par {
       if (run(es)(cond).get) t(es) // Notice we are blocking on the result of `cond`.
       else f(es)
 
+
+  def choiceN[A](n: Par[Int])(choices: List[Par[A]]): Par[A] =
+    es => choices(run(es)(n).get)(es)
+
+  def choice2[A](cond: Par[Boolean])(t: Par[A], f: Par[A]): Par[A] =
+    choiceN(map(cond)(b => if(b) 0 else 1))(List(t, f))
+
+  def choiceMap[K,V](key: Par[K])(choices: Map[K,Par[V]]): Par[V] =
+    es => choices(run(es)(key).get)(es)
+
+  def chooser[A,B](p: Par[A])(choices: A => Par[B]): Par[B] =
+    es => choices(run(es)(p).get)(es)
+
+  def join[A](a: Par[Par[A]]): Par[A] =
+    es => run(es)(run(es)(a).get())
+
+  def flatMap[A,B](a: Par[A])(f: A => Par[B]): Par[B] = es => {
+    val r = run(es)(a).get
+    run(es)(f(r))
+  }
+
+  def joinViaFlatMap[A](a: Par[Par[A]]): Par[A] = ???
+
+  def flatMapViaJoin[A,B](a: Par[A])(f: A => Par[B]): Par[B] = join(map(a)(f))
+
   def lazyUnit[A](a: => A): Par[A] = fork(unit(a))
 
   def asyncF[A, B] (f: A => B): A => Par[B] = a => lazyUnit(f(a))
@@ -52,7 +79,10 @@ object Par {
   def sequence[A](as: List[Par[A]]): Par[List[A]] =
     as.foldRight(unit(List.empty[A]))((cur, acc) => map2(acc, cur)((l, el) => el :: l))
 
-  def parFilter[A](l: List[A])(f: A => Boolean): Par[List[A]] = ???
+  def parFilter[A](l: List[A])(f: A => Boolean): Par[List[A]] = {
+    val pars = l.map(asyncF(el => if(f(el)) Some(el) else None))
+    map(sequence((pars)))(_.flatten)
+  }
 
     /* Gives us infix syntax for `Par`. */
   implicit def toParOps[A](p: Par[A]): ParOps[A] = new ParOps(p)
